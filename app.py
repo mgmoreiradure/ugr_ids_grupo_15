@@ -29,6 +29,26 @@ def cargar_modelo(path: str = "modelo_churn.joblib"):
 
 modelo, columnas_modelo, nombre_modelo = cargar_modelo()
 
+# ---------- Etiquetas en español (el valor interno sigue siendo el del dataset) ----------
+ETIQUETAS = {
+    "Female": "Femenino", "Male": "Masculino",
+    "Yes": "Sí", "No": "No",
+    "Month-to-month": "Mensual", "One year": "Un año", "Two year": "Dos años",
+    "Electronic check": "Cheque electrónico", "Mailed check": "Cheque por correo",
+    "Bank transfer (automatic)": "Transferencia bancaria (automática)",
+    "Credit card (automatic)": "Tarjeta de crédito (automática)",
+    "DSL": "DSL", "Fiber optic": "Fibra óptica",
+}
+
+
+def es(valor: str) -> str:
+    return ETIQUETAS.get(valor, valor)
+
+
+def combo(contenedor, etiqueta, opciones, **kw):
+    return contenedor.selectbox(etiqueta, opciones, format_func=es, **kw)
+
+
 # ---------- Encabezado ----------
 st.title("📞 Predictor de fuga de clientes (Churn)")
 st.caption(
@@ -45,36 +65,37 @@ st.markdown(
 with st.form("formulario_cliente"):
     st.subheader("🧑 Datos demográficos")
     c1, c2 = st.columns(2)
-    gender = c1.selectbox("Género", ["Female", "Male"])
-    senior = c2.selectbox("¿Es adulto mayor?", ["No", "Yes"])
-    partner = c1.selectbox("¿Tiene pareja?", ["No", "Yes"])
-    dependents = c2.selectbox("¿Tiene personas a cargo?", ["No", "Yes"])
+    gender = combo(c1, "Género", ["Female", "Male"])
+    senior = combo(c2, "¿Es adulto mayor?", ["No", "Yes"])
+    partner = combo(c1, "¿Tiene pareja?", ["No", "Yes"])
+    dependents = combo(c2, "¿Tiene personas a cargo?", ["No", "Yes"])
 
     st.subheader("📅 Contrato")
     c1, c2 = st.columns(2)
     tenure = c1.slider("Antigüedad como cliente (meses)", 0, 72, 12)
-    contract = c2.selectbox("Tipo de contrato", ["Month-to-month", "One year", "Two year"])
-    paperless = c1.selectbox("Facturación digital", ["Yes", "No"])
-    payment = c2.selectbox(
+    contract = combo(c2, "Tipo de contrato", ["Month-to-month", "One year", "Two year"])
+    paperless = combo(c1, "Facturación digital", ["Yes", "No"])
+    payment = combo(
+        c2,
         "Método de pago",
         ["Electronic check", "Mailed check", "Bank transfer (automatic)", "Credit card (automatic)"],
     )
 
     st.subheader("📶 Servicios")
     c1, c2, c3 = st.columns(3)
-    phone = c1.selectbox("Línea telefónica", ["Yes", "No"])
-    multiple = c2.selectbox("Múltiples líneas", ["No", "Yes"])
-    internet = c3.selectbox("Internet", ["DSL", "Fiber optic", "No"])
+    phone = combo(c1, "Línea telefónica", ["Yes", "No"])
+    multiple = combo(c2, "Múltiples líneas", ["No", "Yes"])
+    internet = combo(c3, "Internet", ["DSL", "Fiber optic", "No"])
 
     c1, c2, c3 = st.columns(3)
-    online_sec = c1.selectbox("Seguridad online", ["No", "Yes"])
-    online_bak = c2.selectbox("Backup online", ["No", "Yes"])
-    dev_prot = c3.selectbox("Protección de equipos", ["No", "Yes"])
+    online_sec = combo(c1, "Seguridad online", ["No", "Yes"])
+    online_bak = combo(c2, "Backup online", ["No", "Yes"])
+    dev_prot = combo(c3, "Protección de equipos", ["No", "Yes"])
 
     c1, c2, c3 = st.columns(3)
-    tech_sup = c1.selectbox("Soporte técnico", ["No", "Yes"])
-    stream_tv = c2.selectbox("Streaming TV", ["No", "Yes"])
-    stream_mv = c3.selectbox("Streaming Películas", ["No", "Yes"])
+    tech_sup = combo(c1, "Soporte técnico", ["No", "Yes"])
+    stream_tv = combo(c2, "Streaming TV", ["No", "Yes"])
+    stream_mv = combo(c3, "Streaming Películas", ["No", "Yes"])
 
     st.subheader("💲 Cargos")
     c1, c2 = st.columns(2)
@@ -86,13 +107,18 @@ with st.form("formulario_cliente"):
 
 # ---------- Lógica de predicción ----------
 def construir_feature_vector(datos: dict) -> pd.DataFrame:
-    """Replica el preprocesamiento del training."""
-    df = pd.DataFrame([datos])
-    # One-hot encoding con drop_first (igual que en el training)
-    df_enc = pd.get_dummies(df, drop_first=True, dtype=int)
-    # Alinear columnas al orden/espacio del modelo
-    df_enc = df_enc.reindex(columns=columnas_modelo, fill_value=0)
-    return df_enc
+    """Replica el preprocesamiento del training (one-hot con drop_first).
+
+    No se usa pd.get_dummies porque con una sola fila cada columna tiene una
+    única categoría y drop_first la elimina, dejando todo en cero.
+    """
+    fila = dict.fromkeys(columnas_modelo, 0)
+    for campo, valor in datos.items():
+        if campo in fila:  # numéricas
+            fila[campo] = valor
+        elif f"{campo}_{valor}" in fila:  # categóricas (categoría no base)
+            fila[f"{campo}_{valor}"] = 1
+    return pd.DataFrame([fila], columns=columnas_modelo)
 
 
 if submit:
